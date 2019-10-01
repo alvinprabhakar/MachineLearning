@@ -1,0 +1,344 @@
+#Importing the Libraries
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+
+#Set the working directory
+os.chdir('C:\\Prabha\\PrabhaML\\BigDataMart')
+
+#Importing the files
+train = pd.read_csv('train.csv')
+test = pd.read_csv('test.csv')
+
+train.isnull().sum()
+
+train.apply(lambda x: sum(x.isnull()))
+
+d = train.describe()
+
+train.apply(lambda x : len(x.unique()))
+
+#Filter categorical variables
+cat_columns =  [ x for x in train.dtypes.index if train.dtypes[x] == "object" ]
+ 
+
+ 
+for x in train.dtypes.index:
+    if train.dtypes[x] == "object":
+        print(x)
+
+#Exclude ID cols and source:
+
+cat_columns = [x for x in cat_columns if x not in ['Item_Identifier','Outlet_Identifier']]
+
+#Print frequency of categories
+
+for x in cat_columns:
+    print("Value of %s is:"%x)
+    print(train[x].value_counts())
+    
+################Impute Missing Values
+#Determine the average weight per item:
+tem_avg_weight = train.pivot_table(values='Item_Weight', index='Item_Identifier')
+
+train['Item_Weight'] = np.where(train['Item_Weight'].isna(),np.nanmedian(train['Item_Weight']),train['Item_Weight'])
+test['Item_Weight'] = np.where(test['Item_Weight'].isna(),np.nanmedian(test['Item_Weight']),test['Item_Weight'])
+
+
+train['Outlet_Size'] = np.where(train['Outlet_Size'].isnull(),"Medium",train['Outlet_Size'])
+test['Outlet_Size'] = np.where(test['Outlet_Size'].isnull(),"Medium",test['Outlet_Size'])
+
+#Import mode function:
+from scipy.stats import mode
+
+#Determing the mode for each
+outlet_size_mode = train.pivot_table(values='Outlet_Size', columns='Outlet_Type',aggfunc=(lambda x:mode(x).mode[0]) )
+print(outlet_size_mode)
+outlet_size_mode = test.pivot_table(values='Outlet_Size', columns='Outlet_Type',aggfunc=(lambda x:mode(x).mode[0]) )
+
+#Get a boolean variable specifying missing Item_Weight values
+miss_bool = train['Outlet_Size'].isnull() 
+miss_bool_test = test['Outlet_Size'].isnull() 
+
+#Impute data and check #missing values before and after imputation to confirm
+print(sum(miss_bool))
+train.loc[miss_bool,'Outlet_Size'] = train.loc[miss_bool,'Outlet_Type'].apply(lambda x: outlet_size_mode[x])
+print(sum(train['Outlet_Size'].isnull()))
+test.loc[miss_bool_test,'Outlet_Size'] = test.loc[miss_bool_test,'Outlet_Type'].apply(lambda x: outlet_size_mode[x])
+print(sum(test['Outlet_Size'].isnull()))
+
+
+test['Outlet_Size'].value_counts()
+train['Outlet_Size'].value_counts()
+train['Outlet_Size'].mode
+#Consider combining Outlet_Type
+train.pivot_table(values='Item_Outlet_Sales',index='Outlet_Type')
+#This shows significant difference between them and we’ll leave them as it is. Note that this is just one way of doing this, you can perform some other analysis in different situations and also do the same for other features.
+
+
+#Modify Item_Visibility
+
+train['Item_Visibility'] = np.where(train['Item_Visibility']==0,np.nanmedian(train['Item_Visibility']),train['Item_Visibility'])
+test['Item_Visibility'] = np.where(test['Item_Visibility']==0,np.nanmedian(test['Item_Visibility']),test['Item_Visibility'])
+
+
+
+train['Item_Visibility'].describe()
+
+
+
+
+#Get the first two characters of ID:
+train['Item_Type_Combined'] = train['Item_Identifier'].apply(lambda x: x[0:2])
+
+#Rename them to more intuitive categories:
+train['Item_Type_Combined'] = train['Item_Type_Combined'].map({'FD':'Food',
+                                                             'NC':'Non-Consumable',
+                                                             'DR':'Drinks'})
+train['Item_Type_Combined'].value_counts()
+
+#Rename them to more intuitive categories:
+test['Item_Type_Combined'] = test['Item_Identifier'].apply(lambda x: x[0:2])
+test['Item_Type_Combined'] = test['Item_Type_Combined'].map({'FD':'Food',
+                                                             'NC':'Non-Consumable',
+                                                             'DR':'Drinks'})
+test['Item_Type_Combined'].value_counts()
+
+
+#Create YOB as a new variable
+
+train['YOB'] = 2013 - train['Outlet_Establishment_Year']
+test['YOB'] = 2013 - test['Outlet_Establishment_Year']
+
+#Modify categories of Item_Fat_Content
+train['Item_Fat_Content'].value_counts()
+test['Item_Fat_Content'].value_counts()
+
+train['Item_Fat_Content'] = train['Item_Fat_Content'].replace({'LF':'Low Fat', 'reg':'Regular',
+                                                               'low fat':'Low Fat'})
+    
+test['Item_Fat_Content'] = test['Item_Fat_Content'].replace({'LF':'Low Fat', 'reg':'Regular',
+                                                               'low fat':'Low Fat'})
+    
+#Numerical and One-Hot Coding of Categorical variables
+from sklearn.preprocessing import LabelEncoder
+LE = LabelEncoder()
+#New variable for outlet
+train['Outlet'] = LE.fit_transform(train['Outlet_Identifier']) 
+test['Outlet'] = LE.fit_transform(test['Outlet_Identifier']) 
+
+var_mod = ['Item_Fat_Content','Outlet_Location_Type','Item_Type_Combined','Outlet_Type','Outlet',
+           'Outlet_Size']   
+
+for x in var_mod:
+    train[x] = LE.fit_transform(train[x])
+    test[x] = LE.fit_transform(test[x])
+    
+#One Hot Coding:
+train = pd.get_dummies(train, columns=['Item_Fat_Content','Outlet_Location_Type','Outlet_Type',
+                              'Item_Type_Combined','Outlet','Outlet_Size'])
+test = pd.get_dummies(test, columns=['Item_Fat_Content','Outlet_Location_Type','Outlet_Type',
+                              'Item_Type_Combined','Outlet','Outlet_Size'])
+    
+correlat = train.corr()
+    
+
+    
+    
+#Drop the columns which have been converted to different types:
+    
+traincopy = train[:]
+testcopy = test[:]
+traincopy.drop(['Item_Type','Outlet_Establishment_Year','Outlet_Identifier','Item_Outlet_Sales'],axis=1,inplace=True)
+testcopy.drop(['Item_Type','Outlet_Establishment_Year','Outlet_Identifier'],axis=1,inplace=True)
+
+traincopy.drop(['Outlet_3','Outlet_5','Outlet_Size_0'],axis=1,inplace=True)
+testcopy.drop(['Outlet_3','Outlet_5','Outlet_Size_0'],axis=1,inplace=True)
+###################################################################################
+Y = train['Item_Outlet_Sales']
+X= traincopy.iloc[:,1:30]
+X_test= testcopy.iloc[:,1:30]
+ ########################################################################3   
+
+import statsmodels.api as sm
+
+model = sm.OLS(Y,X)
+results = model.fit()
+
+results.summary()
+
+#########################################################################
+from sklearn.preprocessing import MinMaxScaler
+mmsc = MinMaxScaler()
+
+X = mmsc.fit_transform(X)
+X_test = mmsc.fit_transform(X_test)
+Y = mmsc.fit_transform(Y.values.reshape(-1,1))
+#didn't work well - so leave scaling 
+#################################################
+
+from sklearn.linear_model import LinearRegression
+LM = LinearRegression()
+
+LM.fit(X,Y)
+
+LM.coef_
+LM.intercept_
+
+pred_y = LM.predict(X)
+#pred_y = mmsc.inverse_transform(LM.predict(X))
+pred_y_test= LM.predict(X_test)
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(Y,pred_y)
+
+print(mse)
+
+rmse =np.sqrt(mse)
+
+print(rmse)
+
+###########Decision Tree##############################################
+from sklearn.tree import DecisionTreeRegressor
+DT = DecisionTreeRegressor()
+DT.fit(X,Y)
+pred_y_dt = DT.predict(X)
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(Y,pred_y_dt)
+
+print(mse)
+
+rmse =np.sqrt(mse)
+
+print(rmse)
+######################################################
+#polynomial
+#Fitting Polynomial Regression to dataset
+from sklearn.preprocessing import PolynomialFeatures
+poly_reg = PolynomialFeatures(degree = 2)
+X_poly = poly_reg.fit_transform(X)
+X_poly_test = poly_reg.fit_transform(X_test)
+poly_reg.fit(X_poly,Y)
+lin_reg2 = LinearRegression()
+lin_reg2.fit(X_poly , Y)
+pred_y_pol = lin_reg2.predict(X_poly)
+pred_y_pol_test = lin_reg2.predict(X_poly_test)
+
+
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(Y,pred_y_pol)
+
+print(mse)
+
+rmse =np.sqrt(mse)
+
+print(rmse)
+
+##############################################################
+#SVR
+Y = train['Item_Outlet_Sales'].values
+Y = Y.reshape(len(Y),1)
+X= traincopy.iloc[:,1:30]
+X_test= testcopy.iloc[:,1:30]
+# Feature Scaling
+from sklearn.preprocessing import StandardScaler
+sc_X = StandardScaler()
+sc_y = StandardScaler()
+X = sc_X.fit_transform(X)
+Y = sc_y.fit_transform(Y)
+
+from sklearn.svm import SVR
+svr = SVR(kernel = 'rbf',gamma=0.01)
+svr.fit(X,Y)
+
+pred_y = sc_y.inverse_transform(svr.predict(sc_X.transform(X)))
+pred_y_test= sc_y.inverse_transform(svr.predict(sc_X.transform(X_test)))
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(Y,pred_y)
+
+print(mse)
+
+rmse =np.sqrt(mse)
+
+print(rmse)
+
+######################################################################
+##random Forest
+
+# Fitting Random Forest Regression to the dataset
+from sklearn.ensemble import RandomForestRegressor
+RF = RandomForestRegressor(n_estimators = 100, random_state = 0)
+RF.fit(X, Y)
+pred_y = RF.predict(X)
+#pred_y = mmsc.inverse_transform(LM.predict(X))
+pred_y_test= RF.predict(X_test)
+
+from sklearn.metrics import mean_squared_error
+
+mse = mean_squared_error(Y,pred_y)
+
+print(mse)
+
+rmse =np.sqrt(mse)
+
+print(rmse)
+
+##############################################
+
+X_pred = test.iloc[:]
+
+X_test['Item_Outlet_Sales'] = LM.predict(X_test)
+X_test['Item_Outlet_Sales'] = lin_reg2.predict(X_poly_test)
+X_test['Item_Outlet_Sales'] = sc_y.inverse_transform(svr.predict(sc_X.transform(X_test)))
+X_test['Item_Outlet_Sales'] = RF.predict(X_test)
+
+X_pred['Item_Outlet_Sales'] = X_test['Item_Outlet_Sales']
+
+#X_test['Loan_Status'] = pd.Series(LE.inverse_transform(X_test['Loan_Status']))
+
+X_pred = X_pred.iloc[:, [0,5,33]]
+
+X_pred.to_csv('submissionrf.csv',index=False)
+##########################################################################
+
+
+#1977   - 1202.5364337158  - linear
+#1019  -1155.1649671137    - poly
+#dt having more value
+#  1211.1194 - svr, gamma= 0.01 - 1158.81
+# 1277.545 - RF
+
+
+#visual
+
+plt.scatter(train['Item_Identifier'] ,Y , color = 'red')
+plt.plot(train['Item_Identifier'], pred_y_pol, color = 'blue')
+#plt.plot(X,lin_reg2.predict(X_poly), color = 'blue')
+plt.title('Poly')
+plt.xlabel('Item')
+plt.ylabel('Sales')
+plt.show()
+
+
+    
+    
+    
+    
+    
+    
+
+
+
+
+
+
+
+
